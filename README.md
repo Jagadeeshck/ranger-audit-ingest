@@ -80,7 +80,8 @@ ranger_audit_ingest/
 ├── README.md        # This file
 ├── requirements.txt # Python dependencies
 ├── ranger_ingest.py # Main Spark job for Ranger audit logs
-└── hadoop_metrics_processor.py # Optional job to process Hadoop metrics and logs collected by Elastic Agent
+├── hadoop_metrics_processor.py # Optional job to process Hadoop metrics and logs collected by Elastic Agent
+└── audit_reports.py  # Generate sample audit reports from enriched logs
 ```
 
 ## Processing Hadoop metrics and logs
@@ -110,6 +111,37 @@ By default the script aggregates metrics by host and component over a rolling wi
 * How many YARN applications were running when a specific database or table was accessed?
 
 For a complete list of exported fields and their descriptions, consult the upstream Elastic integration documentation【766323546998156†L2-L12】 and the sample events included there.
+
+## Generating sample audit reports
+
+Once you have ingested Ranger audit logs into Elasticsearch using **`ranger_ingest.py`**, you will likely want to answer high‑level questions such as:
+
+- **Who is accessing what?**  Which users read or write which databases and tables, and how many times?
+- **Which users are most active?**  Who generates the highest number of audit events overall?
+- **Which resources are hottest?**  Which databases and tables see the most activity?
+
+To make it easier to explore these questions, this repository includes **`audit_reports.py`**, a PySpark script that generates several example summaries from the enriched audit events stored in Elasticsearch.  The script reads from the same index that `ranger_ingest.py` writes to and produces three tabular reports:
+
+| Report | Description |
+|-------|-------------|
+| `user_resource_summary` | Aggregates events by `user`, `db_name` and `table_name`, counts the number of accesses, and records the earliest and latest access times. This helps you see how frequently a user touches a specific resource and over what period. |
+| `top_users` | Lists the top N users ranked by total number of audit events.  By default N=10. |
+| `resource_access_frequency` | Counts the number of events per database and table, revealing which resources receive the most attention. |
+
+You can either write these reports to disk as CSV files or simply display them in the console.  Here is an example `spark‑submit` invocation that writes the reports to a local directory:
+
+```bash
+spark‑submit \
+  --packages org.elasticsearch:elasticsearch‑spark‑30_2.12:8.13.2 \
+  audit_reports.py \
+    --es‑nodes es01.my‑domain.com \
+    --es‑index ranger‑audit \
+    --output‑dir file:///tmp/audit‑reports
+```
+
+This command will create three subdirectories under `/tmp/audit‑reports` (one for each report), each containing a single CSV file.  If you omit the `--output‑dir` option, the script will instead print each report to the console using Spark’s `show()` method.  You can customise the number of top users shown with the `--top‑n` parameter, and provide Elasticsearch authentication via `--es‑username` and `--es‑password` if necessary.
+
+Feel free to extend `audit_reports.py` with your own aggregations.  For example, you might calculate per‑hour access rates, join with Hadoop metrics on host names to identify performance issues caused by particular users, or cross‑reference audit logs with YARN application IDs to track down heavy resource consumers.
 
 ## License
 
