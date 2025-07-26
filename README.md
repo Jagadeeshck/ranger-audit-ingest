@@ -79,8 +79,37 @@ spark‑submit \
 ranger_audit_ingest/
 ├── README.md        # This file
 ├── requirements.txt # Python dependencies
-└── ranger_ingest.py # Main Spark job
+├── ranger_ingest.py # Main Spark job for Ranger audit logs
+└── hadoop_metrics_processor.py # Optional job to process Hadoop metrics and logs collected by Elastic Agent
 ```
+
+## Processing Hadoop metrics and logs
+
+If you have deployed the [Elastic Agent](https://www.elastic.co/elastic-agent) on your Hadoop cluster, it can collect rich operational metrics and logs from services such as YARN, NameNode, DataNode and NodeManager.  Elastic’s official Hadoop integration uses the Resource Manager API and the JMX API to gather **application**, **cluster**, **DataNode**, **NameNode** and **NodeManager** metrics and ship them to Elasticsearch【766323546998156†L2-L12】.
+
+These metrics are stored in time‑series data streams like `metrics-hadoop.*` and logs are stored under `logs-hadoop.*`.  You can query them directly from Spark via the `elasticsearch‑hadoop` connector and even join them with your enriched audit logs.  For example, you might correlate high audit activity on a table with CPU or memory pressure on a particular DataNode, or identify which YARN applications were running during a security incident.
+
+This repository includes a sample script named **`hadoop_metrics_processor.py`**.  The script illustrates how to read Hadoop metrics and logs from Elasticsearch, compute simple summaries, and write the results back to Elasticsearch.  It accepts command‑line arguments similar to `ranger_ingest.py` (Elasticsearch hosts, index patterns, output index, authentication, etc.) and can be extended to perform custom aggregations or correlations.
+
+### Running the metrics processor
+
+Below is an example of running the metrics processor with `spark‑submit`.  The command reads all Hadoop metric data streams matching `metrics-hadoop.*` and writes summarised results to an index named `hadoop‑metrics‑summary`.
+
+    spark‑submit \
+      --packages org.elasticsearch:elasticsearch‑spark‑30_2.12:8.13.2 \
+      hadoop_metrics_processor.py \
+        --es‑nodes es01.my‑domain.com \
+        --metrics‑index metrics-hadoop.* \
+        --logs‑index logs-hadoop.* \
+        --output‑index hadoop‑metrics‑summary
+
+By default the script aggregates metrics by host and component over a rolling window, but you are free to modify it.  You can also join the metrics with your audit logs (for example by `host.name` or timestamp) to answer questions such as:
+
+* Which DataNodes were under heavy load during periods of frequent table access?
+* Are NameNode garbage collection pauses correlated with access denials in Ranger logs?
+* How many YARN applications were running when a specific database or table was accessed?
+
+For a complete list of exported fields and their descriptions, consult the upstream Elastic integration documentation【766323546998156†L2-L12】 and the sample events included there.
 
 ## License
 
